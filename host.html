@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>경매 진행자 제어 및 관객 공유 화면</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; background-color: #f0f2f5; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; display: flex; gap: 20px; }
+        .column { padding: 15px; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+
+        /* ********** 탭 메뉴 ********** */
+        .tab-menu { display: flex; margin-bottom: 20px; }
+        .tab-menu button {
+            padding: 10px 20px; border: 1px solid #ddd; background-color: #f8f9fa; cursor: pointer;
+            border-bottom: none; border-radius: 5px 5px 0 0; font-weight: bold;
+        }
+        .tab-menu button.active { background-color: #fff; border-color: #007bff; border-bottom: 1px solid #fff; color: #007bff; }
+        .tab-content { border-top: 1px solid #ddd; padding-top: 20px; }
+
+        /* ********** 관객 공유 UI (경매 진행 탭) ********** */
+        .left-panel { flex: 1; min-width: 300px; } /* 팀 현황 */
+        .center-panel { flex: 2; display: flex; flex-direction: column; gap: 20px; } /* 경매 중앙 제어 */
+        .right-panel { flex: 1; min-width: 300px; } /* 제어 및 로그 */
+        h2 { border-bottom: 2px solid #007bff; padding-bottom: 5px; margin-top: 0; color: #007bff; }
+        
+        /* 팀 상태 */
+        .team-status-box { margin-bottom: 15px; padding: 10px; border: 2px solid #ddd; border-radius: 6px; }
+        .team-status-box h3 { margin: 0; font-size: 1.1em; color: #007bff; display: flex; justify-content: space-between; align-items: center; }
+        .team-budget { font-size: 1.2em; color: #28a745; font-weight: bold; }
+        .team-roster { font-size: 0.85em; margin-top: 5px; color: #666; }
+        .roster-limit { color: red; font-weight: bold; }
+
+        /* ********** 팀 현황 GRID 레이아웃 적용 (View 및 Control 탭) ********** */
+        #team-status-container-control,
+        #team-status-container-view { /* View 탭 컨테이너 추가 */
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); /* 200px 최소 너비로 자동 정렬 */
+            gap: 15px;
+            padding: 10px 0; /* 컨테이너 내부 패딩 */
+        }
+        /* ************************************************************* */
+
+        /* 경매 중앙 */
+        #current-item-info { text-align: center; padding: 20px; background-color: #e9ecef; border-radius: 6px; }
+        #current-item-info h3 { font-size: 1.8em; color: #dc3545; margin-bottom: 10px; }
+        #current-item-info ul { list-style: none; padding: 0; margin: 0; display: flex; justify-content: center; gap: 20px; font-size: 1.1em; }
+
+        /* 실시간 현황 */
+        .live-status-section { text-align: center; }
+        .live-status { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 15px 0; border-top: 1px solid #eee; }
+        .status-box { background-color: #f8f9fa; padding: 10px; border-radius: 4px; }
+        .status-label { font-size: 0.9em; color: #6c757d; }
+        #countdown-timer-host { font-size: 2em; color: #dc3545; font-weight: bold; }
+        #current-bid { font-size: 2em; color: #28a745; font-weight: bold; }
+        
+        /* 제어 및 로그 (우측 패널) */
+        .control-section button { padding: 10px 15px; margin: 5px 0; width: 100%; font-weight: bold; border-radius: 4px; border: none; cursor: pointer; transition: background-color 0.2s; }
+        #start-next-auction-button { background-color: #007bff; color: white; }
+        #end-auction-button { background-color: #dc3545; color: white; }
+        
+        /* 유찰자 버튼 스타일 추가 */
+        #start-raffle-button { background-color: #ffaa00; color: white; }
+        #assign-player-button { background-color: #007bff; color: white; }
+        #reset-auction-button { background-color: #8b0000; color: white; } /* 🔴 초기화 버튼 스타일 추가 */
+
+
+        #end-auction-button:disabled, #start-next-auction-button:disabled, #start-raffle-button:disabled, #assign-player-button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #host-message-container { max-height: 200px; overflow-y: auto; font-size: 0.9em; }
+
+        /* ********** 관리 탭 요소 ********** */
+        .setup-item { margin-bottom: 20px; padding: 15px; border: 1px dashed #ccc; border-radius: 4px; }
+        .setup-item h3 { margin-top: 0; color: #6c757d; }
+        .assign-captain-btn { margin-left: 10px; cursor: pointer; border: 1px solid #007bff; background-color: #eaf3ff; padding: 3px 8px; font-size: 0.9em; border-radius: 3px; }
+        /* ********** 공통 스타일 ********** */
+        .hidden-section { display: none; }
+    </style>
+</head>
+<body>
+    <h1>경매 진행자 & 관객 공유 화면</h1>
+    
+    <div class="tab-menu">
+        <button id="tab-view-btn" class="active">경매 진행 (관객 공유용)</button>
+        <button id="tab-control-btn">경매 관리 (Host 전용)</button>
+    </div>
+
+    <div id="tab-view" class="tab-content container">
+
+        <div class="column left-panel">
+            <h2>📊 팀 상태 모니터링</h2>
+            <div id="team-status-container-view"></div>
+        </div>
+
+        <div class="column center-panel">
+            <div id="current-item-section">
+                <h2>🔥 현재 경매 선수</h2>
+                <div id="current-item-info-view">경매가 준비 중입니다.</div>
+            </div>
+            
+            <div class="live-status-section">
+                <h2>📢 실시간 현황</h2>
+                <div class="live-status">
+                    <div class="status-box">
+                        <div class="status-label">남은 시간</div>
+                        <div id="countdown-timer-view">경매 대기</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-label">현재 최고가</div>
+                        <div id="current-bid-view">0원</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-label">최고 입찰자</div>
+                        <div id="highest-bidder-nickname-view">없음</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-label">경매 상태</div>
+                        <div id="auction-status-view">대기 중</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="column right-panel">
+            <div class="control-section">
+                <h2>🕹️ 경매 제어</h2>
+                <button id="start-next-auction-button">다음 경매 시작</button>
+                <button id="end-auction-button" disabled>경매 종료 및 자동 낙찰 처리</button>
+                <button id="start-raffle-button" disabled>유찰자 경매 시작 (랜덤)</button>
+                <button id="assign-player-button" disabled>강제 팀 배정</button> <hr> <button id="reset-auction-button">🔴 전체 경매 초기화</button> </div>
+            
+            <hr>
+            
+            <h2>✅ 최근 로그/결과</h2>
+            <div id="result-message-view">경매 대기 중...</div>
+
+            <hr>
+            
+            <h2>접속자 현황</h2>
+            <p style="font-size: 0.9em;">총 <span id="user-count-view">0</span>명 접속 중</p>
+        </div>
+
+    </div>
+
+    <div id="tab-control" class="tab-content container hidden-section">
+        
+        <div class="column left-panel">
+            <h2>⚙️ 사전 설정 및 제어</h2>
+            
+            <div class="setup-item">
+                <h3>1. 팀 등록</h3>
+                <form id="add-team-form">
+                    <label>팀명: <input type="text" id="team-name" required></label>
+                    <label>초기 예산: <input type="number" id="team-budget" min="1" value="10000" required></label>
+                    <button type="submit">팀 등록</button>
+                    <button type="button" id="clear-teams-button" style="color: red;">전체 팀 초기화</button>
+                </form>
+            </div>
+
+            <div class="setup-item">
+                <h3>2. 선수 등록</h3>
+                <form id="add-item-form">
+                    <label>닉네임: <input type="text" id="item-nickname" required></label>
+                    <label>내전티어: <select id="item-tier" required>
+                        <optgroup label="Master"><option value="M1">M1</option><option value="M2">M2</option><option value="M3">M3</option><option value="M4">M4</option></optgroup>
+                        <optgroup label="Diamond"><option value="D1">D1</option><option value="D2">D2</option><option value="D3">D3</option><option value="D4">D4</option></optgroup>
+                        <optgroup label="Emerald"><option value="E1">E1</option><option value="E2">E2</option><option value="E3">E3</option><option value="E4">E4</option></optgroup>
+                        <optgroup label="Platinum"><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option><option value="P4">P4</option></optgroup>
+                    </select></label><br>
+                    <label>점수: <input type="number" id="item-score" min="0" value="0"></label>
+                    <label>주 포지션: <select id="item-mainpos" required>
+                        <option value="Top">Top</option><option value="Jug">Jug</option><option value="Mid">Mid</option><option value="Ad">Ad</option><option value="Sup">Sup</option>
+                    </select></label>
+                    <label>부 포지션: <select id="item-subpos">
+                        <option value="">(선택 안함)</option><option value="Top">Top</option><option value="Jug">Jug</option><option value="Mid">Mid</option><option value="Ad">Ad</option><option value="Sup">Sup</option>
+                    </select></label><br>
+                    <button type="submit">선수 등록</button>
+                    <button type="button" id="clear-items-button" style="color: red;">전체 선수 초기화</button>
+                </form>
+            </div>
+            
+        </div>
+
+        <div class="column center-panel">
+            <div class="setup-item">
+                <h3>3. 경매 준비</h3>
+                <button type="button" id="shuffle-button">경매 순서 무작위 섞기</button>
+                <p style="margin-top: 10px;">선수 목록 (<span id="item-count-control">0</span>명)</p>
+                <table id="item-list-table" class="item-info-table"></table>
+            </div>
+
+            <div class="setup-item">
+                <h3>4. 접속 사용자 및 팀장 지정</h3>
+                <p>총 <span id="user-count-control">0</span>명 접속 중</p>
+                <ul id="user-list-control"></ul>
+            </div>
+            
+            <div class="setup-item">
+                <h3>5. 팀 현황 요약</h3>
+                <div id="team-status-container-control"></div>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        const socket = io();
+        // 탭 요소
+        const tabViewBtn = document.getElementById('tab-view-btn');
+        const tabControlBtn = document.getElementById('tab-control-btn');
+        const tabView = document.getElementById('tab-view');
+        const tabControl = document.getElementById('tab-control');
+
+        // View 탭 요소 (관객 공유용)
+        const currentItemDivView = document.getElementById('current-item-info-view');
+        const currentBidElementView = document.getElementById('current-bid-view');
+        const highestBidderNicknameElementView = document.getElementById('highest-bidder-nickname-view');
+        const statusElementView = document.getElementById('auction-status-view');
+        const countdownTimerView = document.getElementById('countdown-timer-view');
+        const teamStatusContainerView = document.getElementById('team-status-container-view');
+        const resultDivView = document.getElementById('result-message-view');
+        const userCountView = document.getElementById('user-count-view');
+        
+        // Control 탭 요소 (Host 전용)
+        const addTeamForm = document.getElementById('add-team-form');
+        const clearTeamsButton = document.getElementById('clear-teams-button');
+        const addItemForm = document.getElementById('add-item-form');
+        const clearItemsButton = document.getElementById('clear-items-button');
+        const shuffleButton = document.getElementById('shuffle-button');
+        const itemListTable = document.getElementById('item-list-table');
+        const itemCountControl = document.getElementById('item-count-control');
+        const userListControl = document.getElementById('user-list-control');
+        const userCountControl = document.getElementById('user-count-control');
+        const teamStatusContainerControl = document.getElementById('team-status-container-control'); // Control 탭의 팀 현황 컨테이너
+        
+        // 제어 버튼 (두 탭에서 접근)
+        const startNextButton = document.getElementById('start-next-auction-button');
+        const endButton = document.getElementById('end-auction-button');
+        const startRaffleButton = document.getElementById('start-raffle-button'); 
+        const assignPlayerButton = document.getElementById('assign-player-button');
+        const resetAuctionButton = document.getElementById('reset-auction-button'); // ⬅️ [경매 초기화 기능] 버튼 요소
+        
+        // 상태 변수 (이전과 동일)
+        let allItems = []; 
+        let allTeams = [];
+        let currentBidData = {}; 
+        let captainMap = {}; 
+
+
+        // ********** 탭 전환 로직 **********
+        tabViewBtn.addEventListener('click', () => {
+            tabViewBtn.classList.add('active');
+            tabControlBtn.classList.remove('active');
+            tabView.classList.remove('hidden-section');
+            tabControl.classList.add('hidden-section');
+        });
+
+        tabControlBtn.addEventListener('click', () => {
+            tabControlBtn.classList.add('active');
+            tabViewBtn.classList.remove('active');
+            tabControl.classList.remove('hidden-section');
+            tabView.classList.add('hidden-section');
+        });
+
+        // ********** API Helper **********
+        async function fetchItems() {
+              const response = await fetch('/api/items');
+              allItems = await response.json();
+              renderItemList(allItems);
+        }
+
+        // ********** 팀 및 선수 관리 API 통신 **********
+        addItemForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // 폼 제출 기본 동작 방지
+
+            const newItem = {
+                nickname: document.getElementById('item-nickname').value,
+                tier: document.getElementById('item-tier').value,
+                score: parseInt(document.getElementById('item-score').value),
+                mainPos: document.getElementById('item-mainpos').value,
+                subPos: document.getElementById('item-subpos').value,
+            };
+            
+            // 서버 API 호출
+            const response = await fetch('/api/item', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newItem)
+            });
+
+            // 응답 확인 및 목록 갱신
+            if (response.ok) {
+                addItemForm.reset(); // 폼 초기화
+                fetchItems();       // 목록 갱신 (서버로부터 최신 데이터 요청)
+            } else {
+                  alert(`선수 등록에 실패했습니다. (서버 응답 코드: ${response.status})`);
+            }
+        });
+
+        clearItemsButton.addEventListener('click', async () => {
+            if (confirm('정말로 모든 선수 목록을 초기화 하시겠습니까?')) {
+                await fetch('/api/items', { method: 'DELETE' });
+                fetchItems();
+            }
+        });
+        
+        addTeamForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const teamName = document.getElementById('team-name').value.trim();
+            const budget = parseInt(document.getElementById('team-budget').value);
+            
+            if (teamName && budget >= 0) {
+                socket.emit('addTeam', { name: teamName, budget: budget });
+                document.getElementById('team-name').value = '';
+            } else {
+                alert('팀 이름과 유효한 예산을 입력해 주세요.');
+            }
+        });
+
+        clearTeamsButton.addEventListener('click', async () => {
+            if (confirm('경매를 처음부터 시작하기 위해 모든 팀을 초기화 하시겠습니까? (선수 목록도 초기화됩니다.)')) {
+                await fetch('/api/teams', { method: 'DELETE' });
+                await fetch('/api/items', { method: 'DELETE' });
+                fetchItems();
+            }
+        });
+
+        // ********** 렌더링 함수 (View/Control에 맞춰 분리) **********
+        
+        function renderItemList(items) {
+            allItems = items;
+            itemCountControl.textContent = items.length; // Control 탭 업데이트
+            
+            let header = `<thead><tr><th>순서</th><th>닉네임</th><th>티어/점수</th><th>주/부포지션</th><th>소개</th><th>상태</th></tr></thead><tbody>`;
+            let rows = items.map((item, index) => {
+                const rowClass = item.isAuctioned ? 'is-auctioned' : '';
+                const status = item.isAuctioned 
+                    ? `낙찰: ${item.winner} (${item.finalBid.toLocaleString()}원)` 
+                    : (item.winner ? `유찰` : '경매 대기');
+
+                // item.intro가 없는 경우를 대비해 기본값 설정
+                const intro = item.intro !== undefined ? item.intro : '-'; 
+
+                return `<tr class="${rowClass}">
+                        <td>${index + 1}</td>
+                        <td>${item.nickname}</td>
+                        <td>${item.tier} (${item.score})</td>
+                        <td>${item.mainPos} / ${item.subPos || '-'}</td>
+                        <td>${intro || '-'}</td>
+                        <td>${status}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            itemListTable.innerHTML = header + rows + '</tbody>';
+        }
+
+        function renderTeamStatus(teams, targetContainer) {
+            
+            if (teams.length === 0) {
+                targetContainer.innerHTML = '<p>등록된 팀이 없습니다.</p>';
+                return;
+            }
+            
+            // Grid Layout 적용
+            let teamHTML = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">`;
+
+            teamHTML += teams.map(team => {
+                const isRosterFull = team.players.length >= 4;
+                const roster = team.players.map(p => `${p.nickname} (${p.pos})`).join(', ') || '없음';
+                
+                return `
+                    <div class="team-status-box" style="border-color: ${isRosterFull ? 'red' : '#007bff'};">
+                        <h3 style="color:#007bff;">${team.name} <span style="font-size: 0.7em; color: ${isRosterFull ? 'red' : 'green'};">(${team.players.length}/4)</span></h3>
+                        <p>남은 예산: <strong>${team.budget.toLocaleString()}</strong>원</p>
+                        <p class="team-roster">로스터: ${roster}</p>
+                    </div>
+                `;
+            }).join('');
+            
+            teamHTML += `</div>`;
+            targetContainer.innerHTML = teamHTML;
+        }
+        
+        function renderUserList(users, captainMap, teams) {
+            userCountControl.textContent = users.length;
+            userCountView.textContent = users.length;
+
+            const teamNames = teams.map(t => t.name);
+            
+            userListControl.innerHTML = users.map(nickname => {
+                const assignedTeam = captainMap[nickname];
+                const teamStatus = assignedTeam 
+                    ? `<span style="color: green; font-weight: bold;">(팀장: ${assignedTeam})</span>`
+                    : `<span style="color: gray;">(미지정)</span>`;
+
+                const buttons = teamNames.map(teamName => {
+                    const isAssigned = assignedTeam === teamName;
+                    const isDisabled = isAssigned; 
+                    const buttonText = isAssigned ? '✅ 지정됨' : `[${teamName}] 팀장 지정`;
+                    
+                    return `<button class="assign-captain-btn" data-nickname="${nickname}" data-team="${teamName}" ${isDisabled ? 'disabled' : ''}>${buttonText}</button>`;
+                }).join('');
+
+                return `<li>${nickname} ${teamStatus} ${buttons}</li>`;
+            }).join('');
+            
+            // 버튼에 이벤트 리스너 추가
+            document.querySelectorAll('.assign-captain-btn').forEach(button => {
+                if (!button.disabled) {
+                    button.addEventListener('click', (e) => {
+                        const nickname = e.target.dataset.nickname;
+                        const teamName = e.target.dataset.team;
+                        
+                        socket.emit('assignCaptain', { nickname, teamName });
+                    });
+                }
+            });
+        }
+
+
+        // ********** Socket.io 이벤트 처리 **********
+
+        // 경매 순서 섞기 명령 전송
+        shuffleButton.addEventListener('click', async () => {
+              if (confirm('경매 순서를 무작위로 섞고 첫 경매 준비를 하시겠습니까?')) {
+                  await fetchItems(); 
+                  socket.emit('shuffleAndPrepare');
+              }
+        });
+        
+        // ********** 유찰자 경매 시작 버튼 **********
+        startRaffleButton.addEventListener('click', () => {
+              if (currentBidData.isRaffleRound) {
+                  // 유찰자 경매가 진행 중일 때: 다음 유찰자 경매 시작
+                  if (confirm('다음 유찰자 경매를 시작하시겠습니까?')) {
+                      startRaffleButton.disabled = true;
+                      socket.emit('startNextAuction'); // startNextAuction으로 통합 처리
+                  }
+              } else {
+                  // 1차 경매 종료 후: 유찰자 경매 라운드 시작
+                  if (confirm('유찰자 경매를 시작하시겠습니까? (랜덤 순서)')) {
+                      startRaffleButton.disabled = true;
+                      socket.emit('startRaffleRound');
+                  }
+              }
+        });
+        
+        // ********** [강제 배정 버튼 - 항상 활성화] **********
+        assignPlayerButton.addEventListener('click', () => {
+            // 경매 상태와 관계없이 currentItem이 있을 때만 작동
+            if (!currentBidData.currentItem) {
+                alert('현재 경매에 올라온 선수가 없으므로 강제 배정할 수 없습니다. (경매 시작 또는 유찰자 경매 시작 필요)');
+                return;
+            }
+            
+            const teamNames = allTeams.map(t => t.name);
+            let teamName = prompt(`${currentBidData.currentItem.nickname} 선수를 강제 배정할 팀 이름을 정확히 입력하세요: \n(${teamNames.join(', ')})`);
+            
+            if (teamName) {
+                teamName = teamName.trim();
+                const targetTeam = allTeams.find(t => t.name === teamName);
+                if (targetTeam) {
+                    if (targetTeam.players.length >= 4) {
+                        alert(`${teamName} 팀은 로스터가 가득 찼습니다.`);
+                        return;
+                    }
+                    if (confirm(`${currentBidData.currentItem.nickname} 선수를 ${teamName}에 0원으로 강제 배정하시겠습니까?`)) {
+                        assignPlayerButton.disabled = true;
+                        socket.emit('assignItemToTeam', { teamName: teamName });
+                    }
+                } else {
+                    alert(`팀명 "${teamName}"을 찾을 수 없습니다.`);
+                }
+            }
+        });
+
+        // 다음 경매 시작 버튼
+        startNextButton.addEventListener('click', () => {
+              if (currentBidData.currentItemIndex >= allItems.length) {
+                  alert('모든 경매가 완료되었습니다.');
+                  return;
+              }
+              if (confirm('다음 경매를 시작하시겠습니까?')) {
+                  socket.emit('startNextAuction');
+              }
+        });
+
+        // 경매 종료 버튼
+        endButton.addEventListener('click', () => {
+            if (!currentBidData.isStarted) return;
+            
+            const highestBidder = currentBidData.highestBidderNickname;
+            if (highestBidder === '없음' || highestBidder.includes('종료')) {
+                if (!confirm('입찰자가 없습니다. 유찰 처리하고 다음 경매로 넘어가시겠습니까? (타이머 강제 종료)')) return;
+            } else {
+                  if (!confirm(`최고 입찰자(${highestBidder})에게 자동 낙찰 처리하고 다음 경매로 넘어가시겠습니까? (타이머 강제 종료)`)) return;
+            }
+            
+            socket.emit('endAuction');
+        });
+        
+        // *************************************************************
+        // [경매 초기화 기능] 버튼 이벤트 핸들러
+        // *************************************************************
+        resetAuctionButton.addEventListener('click', () => {
+            if (confirm('🚨 경고: 경매 상태, 예산, 로스터, 낙찰 정보 등 모든 것을 초기화 하시겠습니까?')) {
+                socket.emit('reset_auction'); // ⬅️ server.js에 추가한 이벤트 전송
+                alert('경매 전체 초기화 요청을 서버로 보냈습니다. 화면이 갱신됩니다.');
+                // 초기화 후, 화면을 즉시 갱신하기 위해 최신 데이터를 요청합니다.
+                fetchItems();
+            }
+        });
+        // *************************************************************
+
+
+        // 현재 입찰 정보 업데이트 수신 (View 탭 요소 모두 업데이트)
+        socket.on('updateBid', (data) => {
+            currentBidData = data; 
+            
+            // View 탭 업데이트
+            currentBidElementView.textContent = (data.amount || 0).toLocaleString() + '원';
+            highestBidderNicknameElementView.textContent = data.bidderNickname || '없음';
+            statusElementView.textContent = data.isStarted ? '진행 중' : '대기 중';
+            
+            // Host 제어 버튼 상태 업데이트
+            const failedItemsCount = allItems.filter(item => item.winner === '유찰').length;
+            const currentItemIndex = data.currentItemIndex;
+            const processedItems = allItems.filter(item => item.isAuctioned || item.winner === '유찰');
+            const isAllItemsProcessed = processedItems.length === allItems.length; // 1차 경매 처리 완료 여부
+
+
+            if (data.isStarted) {
+                // 경매 진행 중: 모든 시작/다음 버튼 비활성화
+                startNextButton.disabled = true;
+                endButton.disabled = false;
+                startRaffleButton.disabled = true;
+                
+                // [강제 배정] 경매 진행 중에도 활성화
+                assignPlayerButton.disabled = false; 
+            } else {
+                // 경매 대기 중: 종료 비활성화
+                endButton.disabled = true;
+
+                // [강제 배정] 현재 경매 대상이 있을 때만 활성화 (버튼이 의미있게 동작하려면)
+                assignPlayerButton.disabled = (data.currentItemIndex < 0);
+                
+                // 1차 경매 모드
+                if (!data.isRaffleRound) {
+                    // 1차 경매가 끝났는지 확인
+                    if (isAllItemsProcessed) {
+                        startNextButton.disabled = true; // 다음 경매 버튼 비활성화
+                        
+                        // 유찰자가 있다면 유찰자 경매 버튼 활성화
+                        startRaffleButton.disabled = failedItemsCount === 0;
+                        startRaffleButton.textContent = failedItemsCount > 0 ? `유찰자 경매 시작 (${failedItemsCount}명)` : '유찰자 없음';
+                    } else {
+                        // 아직 1차 경매가 남아있다면 다음 경매 버튼 활성화
+                        startNextButton.disabled = false; 
+                        startRaffleButton.disabled = true;
+                    }
+                } 
+                // 2차 유찰자 경매 모드
+                else {
+                    startNextButton.disabled = true;
+                    
+                    // 유찰자 목록의 총 개수와 현재 인덱스를 비교 (서버가 관리하는 failedItems 배열 기준)
+                    const raffleItems = allItems.filter(item => item.winner === '유찰');
+                    const isRaffleFinished = currentItemIndex >= raffleItems.length;
+
+                    if (!isRaffleFinished) {
+                        startRaffleButton.textContent = "다음 유찰자 경매 시작";
+                        startRaffleButton.disabled = false;
+                        
+                        // [강제 배정] 경매 대기 중에도 활성화 상태 유지
+                    } else {
+                          startRaffleButton.textContent = "모든 유찰자 처리 완료";
+                          startRaffleButton.disabled = true;
+                    }
+                }
+            }
+
+
+            if (data.currentItem) {
+                const item = data.currentItem;
+                // 현재 아이템이 전체 목록의 몇 번째인지 확인하는 로직
+                const currentList = data.isRaffleRound ? allItems.filter(i => i.winner === '유찰') : allItems;
+                const currentIndexInCurrentList = currentList.findIndex(i => i.id === item.id) + 1;
+                const totalInCurrentList = currentList.length;
+
+                const itemInfoHTML = `
+                    <h3>${item.nickname} (순서 ${currentIndexInCurrentList} / ${totalInCurrentList})</h3>
+                    <ul>
+                        <li>티어: <strong>${item.tier}</strong> (${item.score}점)</li>
+                        <li>주/부 포지션: <strong>${item.mainPos}</strong> / ${item.subPos || '-'}</li>
+                        <li>소개: ${item.intro || '없음'}</li>
+                    </ul>
+                `;
+                  currentItemDivView.innerHTML = itemInfoHTML;
+            } else if (isAllItemsProcessed && allTeams.length > 0) {
+                  currentItemDivView.innerHTML = `<h3>모든 경매가 완료되었습니다! (유찰자 ${failedItemsCount}명)</h3>`;
+            } else {
+                  currentItemDivView.innerHTML = `<h3>선수를 등록하고 '무작위 섞기'를 눌러주세요.</h3>`;
+            }
+            
+            if (!data.isStarted) {
+                  countdownTimerView.textContent = data.currentItemIndex >= 0 ? '경매 대기' : '준비 필요';
+            }
+        });
+        
+        // 카운트다운 업데이트 수신
+        socket.on('updateCountdown', (countdown) => {
+              if (countdown > 0) {
+                  countdownTimerView.textContent = `${countdown}초`;
+                  countdownTimerView.style.color = countdown <= 3 ? 'red' : '#dc3545';
+              } else if (currentBidData.isStarted) {
+                  countdownTimerView.textContent = '0초 (낙찰 처리 중)';
+                  countdownTimerView.style.color = 'red';
+              }
+        });
+        
+        // 경매 결과 수신
+        socket.on('auctionResult', (data) => {
+            resultDivView.innerHTML = `
+                <p style="color: green; font-weight: bold;">✅ 경매 종료! 선수: ${data.itemNickname}, 최종 낙찰가: ${data.finalBid.toLocaleString()}원</p>
+                <p>낙찰자: ${data.winnerNickname || '유찰'}, 낙찰 팀: ${data.winnerTeam || '없음'}</p>
+            `;
+            countdownTimerView.textContent = '경매 종료';
+        });
+        
+        // 사용자 목록 업데이트 수신
+        socket.on('userListUpdate', (data) => {
+            renderUserList(data.users, data.captainMap, allTeams); 
+        });
+        
+        // 캡틴 맵 업데이트 수신
+        socket.on('captainMapUpdate', (newCaptainMap) => {
+            captainMap = newCaptainMap;
+        });
+
+        // 선수 목록 업데이트 수신
+        socket.on('itemUpdate', (items) => {
+            renderItemList(items);
+        });
+
+        // 팀 목록 업데이트 수신
+        socket.on('teamUpdate', (teams) => {
+            allTeams = teams;
+            renderTeamStatus(teams, teamStatusContainerView); // View 탭 업데이트 (Grid 적용)
+            renderTeamStatus(teams, teamStatusContainerControl); // Control 탭 업데이트 (Grid 적용)
+            renderUserList(Object.values(socket.io.engine.clients), captainMap, allTeams); // Control 탭 업데이트를 위해
+        });
+        
+        socket.on('connect', () => {
+              socket.emit('requestUserList');
+              fetchItems();
+        });
+
+        // 초기 탭 설정
+        tabViewBtn.click();
+    </script>
+</body>
+</html>

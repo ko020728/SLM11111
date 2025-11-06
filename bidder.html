@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>슬라임컵 팀원 경매 시스템 - 관객/참여자</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; background-color: #f0f2f5; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; display: flex; gap: 20px; }
+        .column { padding: 15px; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+
+        /* ********** 레이아웃 ********** */
+        .left-panel { flex: 1; min-width: 300px; } 
+        .center-panel { flex: 2; display: flex; flex-direction: column; gap: 20px; } 
+        .right-panel { flex: 1; min-width: 300px; } 
+
+        /* ********** 공통 요소 ********** */
+        h1 { color: #8b00ff; border-bottom: 3px solid #8b00ff; padding-bottom: 5px; }
+        h2 { border-bottom: 2px solid #007bff; padding-bottom: 5px; margin-top: 0; color: #007bff; }
+        strong { font-weight: 700; color: #333; }
+        
+        /* ********** 팀 상태 (좌측 패널) ********** */
+        .team-status-box { 
+            margin-bottom: 15px; 
+            padding: 10px; 
+            border: 2px solid #ddd; 
+            border-radius: 6px;
+            transition: border-color 0.3s;
+        }
+        .team-status-box h3 { margin: 0; font-size: 1.1em; color: #007bff; display: flex; justify-content: space-between; align-items: center; }
+        .team-budget { font-size: 1.2em; color: #28a745; font-weight: bold; }
+        .team-roster { font-size: 0.85em; margin-top: 5px; color: #666; }
+        .is-my-team { border-color: #ffc107; background-color: #fffde7; }
+        .roster-limit { color: red; font-weight: bold; }
+
+        /* ********** 경매 중앙 (중앙 패널) ********** */
+        #current-item-info { text-align: center; padding: 20px; background-color: #e9ecef; border-radius: 6px; }
+        #current-item-info h3 { font-size: 1.8em; color: #dc3545; margin-bottom: 10px; }
+        #current-item-info ul { list-style: none; padding: 0; margin: 0; display: flex; justify-content: center; gap: 20px; font-size: 1.1em; }
+
+        /* ********** 실시간 현황 ********** */
+        .live-status-section { text-align: center; }
+        .live-status { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 15px 0; border-top: 1px solid #eee; }
+        .status-box { background-color: #f8f9fa; padding: 10px; border-radius: 4px; }
+        .status-label { font-size: 0.9em; color: #6c757d; }
+        #countdown-timer { font-size: 2em; color: #dc3545; font-weight: bold; }
+        #current-bid { font-size: 2em; color: #28a745; font-weight: bold; }
+
+        /* ********** 입찰 섹션 (우측 패널) ********** */
+        #bid-section { text-align: center; }
+        #bid-form { display: flex; gap: 10px; margin-top: 15px; align-items: center; }
+        #bid-amount { padding: 10px; border: 1px solid #ccc; border-radius: 4px; flex-grow: 1; font-size: 1em; }
+        #place-bid-button { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
+        #place-bid-button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        .quick-bid-buttons { margin-top: 10px; display: flex; justify-content: center; gap: 10px; }
+        .quick-bid { padding: 10px; background-color: #ffc107; color: #333; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background-color 0.2s; }
+        .quick-bid:disabled { background-color: #ccc; }
+
+        /* ********** 메시지 ********** */
+        #message-container { max-height: 200px; overflow-y: auto; margin-top: 10px; padding: 5px; border-top: 1px solid #eee; }
+        #message-container p { margin: 5px 0; padding: 5px; border-radius: 4px; font-size: 0.9em; }
+        .msg-success { background-color: #d4edda; color: #155724; }
+        .msg-error { background-color: #f8d7da; color: #721c24; }
+        .msg-info { background-color: #cce5ff; color: #004085; }
+    </style>
+</head>
+<body>
+    
+    <div id="nickname-setup" style="text-align: center; padding: 50px; background-color: #fff; border-radius: 8px; max-width: 400px; margin: 100px auto;">
+        <h1>슬라임컵 팀원 경매 시스템</h1>
+        <h2>🧑 경매 참여를 위해 닉네임을 설정해 주세요</h2>
+        <form id="nickname-form">
+            <input type="text" id="nickname" placeholder="닉네임 입력 (팀장 이름과 일치해야 입찰 가능)" required 
+                   style="padding: 10px; width: 80%; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px;">
+            <button type="submit" style="padding: 10px 30px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">입장</button>
+        </form>
+    </div>
+
+    <div id="auction-view" class="container" style="display: none;">
+        <h1>슬라임컵 팀원 경매 시스템</h1>
+
+        <div class="column left-panel">
+            <h2>📊 팀 상태 모니터링</h2>
+            <div id="team-status-container"></div>
+        </div>
+
+        <div class="column center-panel">
+            <div id="current-item-section">
+                <h2>🔥 현재 경매 선수</h2>
+                <div id="current-item-info">경매가 준비 중입니다.</div>
+            </div>
+            
+            <div class="live-status-section">
+                <h2>📢 실시간 현황</h2>
+                <div class="live-status">
+                    <div class="status-box">
+                        <div class="status-label">남은 시간</div>
+                        <div id="countdown-timer">경매 대기</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-label">현재 최고가</div>
+                        <div id="current-bid">0원</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-label">최고 입찰자</div>
+                        <div id="highest-bidder-nickname">없음</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-label">경매 상태</div>
+                        <div id="auction-status">대기 중</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="column right-panel">
+            <div id="bid-section">
+                <h2>💸 입찰하기</h2>
+                <p id="my-team-status" style="font-size: 0.9em;">나의 팀장 상태: <span style="color:red;">팀장 미지정 또는 닉네임 미설정</span></p>
+                
+                <form id="bid-form">
+                    <input type="number" id="bid-amount" placeholder="직접 입찰 금액 입력" min="10" required>
+                    <button type="submit" id="place-bid-button" disabled>입찰</button>
+                </form>
+                
+                <div class="quick-bid-buttons">
+                    <button type="button" class="quick-bid" data-amount="10" disabled>+10원</button>
+                    <button type="button" class="quick-bid" data-amount="50" disabled>+50원</button>
+                    <button type="button" class="quick-bid" data-amount="100" disabled>+100원</button>
+                </div>
+            </div>
+
+            <hr>
+            
+            <h2>🔔 알림/메시지</h2>
+            <div id="message-container"></div>
+        </div>
+
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        const socket = io();
+        // UI 요소
+        const nicknameForm = document.getElementById('nickname-form');
+        const nicknameInput = document.getElementById('nickname');
+        const nicknameSetupDiv = document.getElementById('nickname-setup');
+        const auctionViewDiv = document.getElementById('auction-view');
+        
+        const currentItemDiv = document.getElementById('current-item-info'); 
+        const currentBidElement = document.getElementById('current-bid');
+        const highestBidderNicknameElement = document.getElementById('highest-bidder-nickname'); 
+        const statusElement = document.getElementById('auction-status');
+        const bidForm = document.getElementById('bid-form');
+        const bidAmountInput = document.getElementById('bid-amount');
+        const placeBidButton = document.getElementById('place-bid-button');
+        const teamStatusContainer = document.getElementById('team-status-container'); 
+        const myTeamStatusElement = document.getElementById('my-team-status');
+        const messageContainer = document.getElementById('message-container');
+        const countdownTimerElement = document.getElementById('countdown-timer');
+        const quickBidButtons = document.querySelectorAll('.quick-bid');
+        
+        // 상태 변수
+        let myNickname = '';
+        let myTeamName = null;
+        let auctionState = { amount: 0, isStarted: false }; 
+        let allTeams = [];
+        let captainMap = {};
+        
+        // ********** 닉네임 설정 및 입찰 **********
+        nicknameForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            myNickname = nicknameInput.value.trim();
+            if (myNickname) {
+                socket.emit('setNickname', myNickname);
+                nicknameSetupDiv.style.display = 'none';
+                auctionViewDiv.style.display = 'flex';
+            }
+        });
+
+        bidForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            // 입찰 금액을 쉼표 없는 순수 숫자로 변환합니다. (중요 복구)
+            const currentBid = parseInt(currentBidElement.textContent.replace(/[^0-9]/g, '')) || 0; 
+            const bidAmount = parseInt(bidAmountInput.value);
+
+            if (bidAmount > currentBid) { 
+                socket.emit('placeBid', bidAmount);
+            } else {
+                showMessage(`입찰 금액은 현재 최고가(${(currentBid).toLocaleString()}원)보다 높아야 합니다.`, 'red');
+            }
+            bidAmountInput.value = '';
+        });
+        
+        // ********** 퀵 입찰 버튼 로직 **********
+        quickBidButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                if (button.disabled) return;
+                
+                const addAmount = parseInt(button.dataset.amount);
+                // 현재 최고가를 숫자로 정확히 파싱합니다. (중요 복구)
+                const currentBid = parseInt(currentBidElement.textContent.replace(/[^0-9]/g, '')) || 0; 
+                let newBid;
+
+                if (currentBid === 0) {
+                     newBid = addAmount === 10 ? 10 : addAmount;
+                } else {
+                     newBid = currentBid + addAmount;
+                }
+
+                if (newBid > currentBid) {
+                    socket.emit('placeBid', newBid);
+                } else {
+                    showMessage('🚨 입찰 조건을 확인해 주세요. (현재 최고가보다 높게 입력)', 'red');
+                }
+            });
+        });
+
+        // ********** 렌더링 및 UI 업데이트 **********
+        function showMessage(msg, type) {
+            const p = document.createElement('p');
+            p.textContent = msg.replace(/<[^>]*>?/gm, '');
+            
+            if (type === 'green' || msg.includes('✅')) p.className = 'msg-success';
+            else if (type === 'red' || msg.includes('🚨')) p.className = 'msg-error';
+            else p.className = 'msg-info';
+            
+            messageContainer.prepend(p);
+            while (messageContainer.children.length > 8) {
+                messageContainer.removeChild(messageContainer.lastChild);
+            }
+        }
+        
+        function updateMyTeamStatus() {
+            if (myNickname && myTeamName) {
+                myTeamStatusElement.innerHTML = `나의 팀: <strong style="color: #007bff;">${myTeamName} (팀장)</strong>`;
+            } else if (myNickname) {
+                 myTeamStatusElement.innerHTML = `나의 팀장 상태: <span style="color:red;">닉네임 등록됨, 팀장 미지정</span>`;
+            } else {
+                 myTeamStatusElement.innerHTML = `나의 팀장 상태: <span style="color:red;">닉네임 미설정</span>`;
+            }
+        }
+
+        function renderTeamStatus(teams) {
+            allTeams = teams;
+            if (teams.length === 0) {
+                teamStatusContainer.innerHTML = '<p>등록된 팀이 없습니다.</p>';
+                return;
+            }
+            
+            teamStatusContainer.innerHTML = teams.map(team => {
+                const isMyTeam = team.name === myTeamName;
+                const isRosterFull = team.players.length >= 4;
+                const roster = team.players.map(p => `${p.nickname} (${p.pos})`).join(', ') || '없음';
+                
+                const rosterCount = team.players.length;
+                const rosterClass = isRosterFull ? 'roster-limit' : 'roster-count';
+
+                return `
+                    <div class="team-status-box ${isMyTeam ? 'is-my-team' : ''}" style="border-color: ${isRosterFull ? 'red' : '#007bff'};">
+                        <h3>
+                            <span>${team.name}</span>
+                            <span class="${rosterClass}" style="font-size: 0.9em;">(${rosterCount}/4)</span>
+                        </h3>
+                        <p>남은 예산: <span class="team-budget">${(team.budget || 0).toLocaleString()}원</span></p>
+                        <p class="team-roster">로스터: ${roster}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // ********** 소켓 이벤트 처리 **********
+        
+        // 1. 입찰 상태 업데이트 수신
+        socket.on('updateBid', (data) => {
+            auctionState.amount = data.amount || 0; // undefined 방지
+            auctionState.isStarted = data.isStarted;
+            
+            currentBidElement.textContent = auctionState.amount.toLocaleString() + '원';
+            highestBidderNicknameElement.textContent = data.bidderNickname || '없음';
+            statusElement.textContent = data.isStarted ? '진행 중' : '대기 중';
+            
+            if (data.currentItem) {
+                const item = data.currentItem;
+                currentItemDiv.innerHTML = `
+                    <h3>${item.nickname}</h3>
+                    <ul>
+                        <li>티어: <strong>${item.tier || '-'}</strong> (${item.score || 0}점)</li>
+                        <li>주/부 포지션: <strong>${item.mainPos || '-'}</strong> / ${item.subPos || '-'}</li>
+                        <li>소개: ${item.intro || '없음'}</li>
+                    </ul>
+                `;
+            } else {
+                currentItemDiv.innerHTML = '경매가 준비 중이거나 완료되었습니다.';
+            }
+
+            // 입찰 버튼 활성화/비활성화
+            const isCaptain = myTeamName !== null && data.isStarted; 
+            placeBidButton.disabled = !isCaptain;
+            bidAmountInput.min = auctionState.amount > 0 ? auctionState.amount + 1 : 10; 
+            
+            quickBidButtons.forEach(button => button.disabled = !isCaptain);
+        });
+        
+        // 2. 카운트다운 업데이트 수신
+        socket.on('updateCountdown', (countdown) => {
+             if (countdown > 0) {
+                 countdownTimerElement.textContent = `${countdown}초`;
+                 countdownTimerElement.style.color = countdown <= 3 ? 'red' : '#dc3545';
+             } else if (auctionState.isStarted) {
+                 countdownTimerElement.textContent = '0초 (처리 중)';
+                 countdownTimerElement.style.color = 'red';
+             }
+        });
+        
+        // 3. 팀 목록 업데이트 수신
+        socket.on('teamUpdate', (teams) => {
+            renderTeamStatus(teams);
+        });
+        
+        // 4. 팀장 맵 업데이트 수신
+        socket.on('captainMapUpdate', (newCaptainMap) => {
+            captainMap = newCaptainMap;
+            myNickname = nicknameInput.value.trim(); // 닉네임이 설정된 후 업데이트
+            myTeamName = captainMap[myNickname] || null;
+            updateMyTeamStatus();
+        });
+
+        // 5. 서버 메시지 수신
+        socket.on('message', (msg) => {
+            showMessage(msg, 'info');
+        });
+        
+        // 6. 경매 결과 수신
+        socket.on('auctionResult', (data) => {
+            showMessage(`🎉 [${data.itemNickname}] 낙찰! 팀: ${data.winnerTeam || '유찰'}, 최종가: ${data.finalBid.toLocaleString()}원`, 'blue');
+            countdownTimerElement.textContent = '경매 종료';
+        });
+
+        socket.on('connect', () => {
+             // 연결 시 Host로부터 초기 상태를 받기 위해 요청 (버튼 상태 즉시 업데이트)
+             socket.emit('requestUserList');
+        });
+    </script>
+</body>
+</html>
