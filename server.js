@@ -1,4 +1,4 @@
-// server.js (최종 버전: 모든 기능, 경로 설정, 포트 설정 포함)
+// server.js (최종 수정 버전: 경로 오류 해결)
 
 const express = require('express');
 const http = require('http');
@@ -72,8 +72,8 @@ loadData();
 
 
 const app = express();
-// [핵심 수정: public 폴더 경로 설정]
-app.use(express.static(path.join(__dirname, 'public')));
+// [핵심 수정 1/3: public 폴더 참조 삭제. server.js와 같은 위치에서 파일을 찾도록 합니다.]
+app.use(express.static(__dirname));
 app.use(express.json());
 
 const server = http.createServer(app); 
@@ -261,13 +261,15 @@ function startCountdown() {
 }
 
 
-// 라우팅 
+// 라우팅 (경로를 public에서 __dirname으로 수정)
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'bidder.html'));
+    // [핵심 수정 2/3: public 경로 제거]
+    res.sendFile(path.join(__dirname, 'bidder.html')); 
 });
 
 app.get('/host', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'host.html'));
+    // [핵심 수정 3/3: public 경로 제거]
+    res.sendFile(path.join(__dirname, 'host.html')); 
 });
 
 // Host 화면에서 필요한 상태 정보 전송 (GET API는 그대로 유지)
